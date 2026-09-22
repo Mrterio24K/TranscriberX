@@ -10,6 +10,9 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QLabel,
     QFileDialog,
+    QScrollArea,
+    QMessageBox,
+    QPushButton,
 )
 
 from .widgets import (
@@ -20,6 +23,13 @@ from .widgets import (
     ResultTextEdit,
     ActionButton,
 )
+from .theme import AppTheme
+from datetime import datetime
+from pathlib import Path
+
+from ..services.history import History
+from ..services.api_client import ApiClient
+
 
 
 # ================================================================
@@ -418,11 +428,16 @@ class HistoryPage(QWidget):
 
     def __init__(
         self,
+        history_service,
         parent=None,
     ):
         super().__init__(parent)
 
+        self.history_service = history_service
+
         self.setup_ui()
+
+        self.load_history()
 
     def setup_ui(self):
 
@@ -439,9 +454,9 @@ class HistoryPage(QWidget):
             8
         )
 
-        # ---------------------------------------------------------
+        # =====================================================
         # Title
-        # ---------------------------------------------------------
+        # =====================================================
 
         title = QLabel(
             "HISTORY"
@@ -454,13 +469,15 @@ class HistoryPage(QWidget):
         title.setStyleSheet(
             """
             QLabel {
-                color: #FFFFFF;
+                background: transparent;
 
                 font-family: "Inria Serif";
                 font-size: 20px;
-                font-weight: bold;
 
-                margin-bottom: 5px;
+                font-weight: bold;
+                font-style: italic;
+
+                margin-bottom: 8px;
             }
             """
         )
@@ -469,90 +486,335 @@ class HistoryPage(QWidget):
             title
         )
 
-        # ---------------------------------------------------------
-        # History Items
-        # ---------------------------------------------------------
+        # =====================================================
+        # Scroll Area
+        # =====================================================
 
-        for number in range(
-            1,
-            8,
-        ):
+        self.scroll_area = QScrollArea()
 
-            item = QWidget()
+        self.scroll_area.setWidgetResizable(
+            True
+        )
 
-            item.setFixedHeight(
-                55
-            )
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
 
-            item.setStyleSheet(
-                """
-                QWidget {
-                    background-color: #001A2C;
-
-                    border: 1px solid #313437;
-
-                    border-radius: 8px;
-                }
-                """
-            )
-
-            item_layout = QVBoxLayout(
-                item
-            )
-
-            item_layout.setContentsMargins(
-                12,
-                5,
-                8,
-                5,
-            )
-
-            item_layout.setSpacing(
-                0
-            )
-
-            file_name = QLabel(
-                "NAME FILE : (File name Label)"
-            )
-
-            date = QLabel(
-                "DATE : (Date label)"
-            )
-
-            item_layout.addWidget(
-                file_name
-            )
-
-            item_layout.addWidget(
-                date
-            )
-
-            layout.addWidget(
-                item
-            )
-
-        layout.addStretch()
-
-        self.setStyleSheet(
+        self.scroll_area.setStyleSheet(
             """
-            QWidget {
-                background-color: #00111C;
-            }
-
-            QLabel {
-                background-color: transparent;
+            QScrollArea {
+                background: transparent;
 
                 border: none;
-
-                color: #FFFFFF;
-
-                font-family: "Inria Serif";
-                font-size: 11px;
-                font-weight: bold;
             }
             """
         )
 
+        self.history_container = QWidget()
+
+        self.history_layout = QVBoxLayout(
+            self.history_container
+        )
+
+        self.history_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        self.history_layout.setSpacing(
+            8
+        )
+
+        self.history_layout.addStretch()
+
+        self.scroll_area.setWidget(
+            self.history_container
+        )
+
+        layout.addWidget(
+            self.scroll_area
+        )
+
+    # =========================================================
+    # Load History
+    # =========================================================
+
+    def load_history(self):
+
+        # Remove old items
+
+        while self.history_layout.count() > 1:
+
+            item = self.history_layout.takeAt(
+                0
+            )
+
+            widget = item.widget()
+
+            if widget:
+
+                widget.deleteLater()
+
+        history = self.history_service.get_all()
+
+        if not history:
+
+            empty_label = QLabel(
+                "No transcription history"
+            )
+
+            empty_label.setAlignment(
+                Qt.AlignmentFlag.AlignCenter
+            )
+
+            empty_label.setStyleSheet(
+                """
+                QLabel {
+                    color: #8B8B8B;
+
+                    font-family: "Inria Serif";
+                    font-size: 13px;
+
+                    font-weight: bold;
+                    font-style: italic;
+                }
+                """
+            )
+
+            self.history_layout.insertWidget(
+                0,
+                empty_label
+            )
+
+            return
+
+        # =====================================================
+        # History Items
+        # =====================================================
+
+        for record in history:
+
+            item = self.create_history_item(
+                record
+            )
+
+            self.history_layout.insertWidget(
+                self.history_layout.count() - 1,
+                item,
+            )
+
+    # =========================================================
+    # Create Item
+    # =========================================================
+
+    def create_history_item(
+        self,
+        record,
+    ):
+
+        item = QWidget()
+
+        item.setFixedHeight(
+            75
+        )
+
+        item.setStyleSheet(
+            """
+            QWidget {
+                background-color: #001A2C;
+
+                border: 1px solid #313437;
+
+                border-radius: 8px;
+            }
+            """
+        )
+
+        layout = QVBoxLayout(
+            item
+        )
+
+        layout.setContentsMargins(
+            10,
+            7,
+            8,
+            7,
+        )
+
+        layout.setSpacing(
+            2
+        )
+
+        # -----------------------------------------------------
+        # File Name
+        # -----------------------------------------------------
+
+        file_name = QLabel(
+            f"FILE : {record.get('file_name', '')}"
+        )
+
+        file_name.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+
+                border: none;
+
+                font-family: "Inria Serif";
+                font-size: 11px;
+
+                font-weight: bold;
+                font-style: italic;
+            }
+            """
+        )
+
+        layout.addWidget(
+            file_name
+        )
+
+        # -----------------------------------------------------
+        # Date
+        # -----------------------------------------------------
+
+        date_time = QLabel(
+            f"DATE : {record.get('date_time', '')}"
+        )
+
+        date_time.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+
+                border: none;
+
+                color: #8B8B8B;
+
+                font-family: "Inria Serif";
+                font-size: 10px;
+
+                font-weight: bold;
+                font-style: italic;
+            }
+            """
+        )
+
+        layout.addWidget(
+            date_time
+        )
+
+        # -----------------------------------------------------
+        # Download
+        # -----------------------------------------------------
+
+        download_button = QPushButton(
+            "DOWNLOAD"
+        )
+
+        download_button.setFixedSize(
+            85,
+            25
+        )
+
+        download_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        download_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #181D24;
+
+                border: 1px solid #313437;
+
+                border-radius: 5px;
+
+                color: #FFFFFF;
+
+                font-family: "Inria Serif";
+                font-size: 10px;
+
+                font-weight: bold;
+                font-style: italic;
+            }
+
+            QPushButton:hover {
+                background-color: #006FAE;
+            }
+            """
+        )
+
+        download_button.clicked.connect(
+            lambda checked=False,
+            current_record=record:
+            self.download_record(
+                current_record
+            )
+        )
+
+        layout.addWidget(
+            download_button,
+            alignment=Qt.AlignmentFlag.AlignRight,
+        )
+
+        return item
+
+    # =========================================================
+    # Download History
+    # =========================================================
+
+    def download_record(
+        self,
+        record,
+    ):
+
+        file_name = record.get(
+            "file_name",
+            "transcript",
+        )
+
+        transcript = record.get(
+            "transcript",
+            "",
+        )
+
+        default_name = (
+            Path(file_name).stem
+            + "_transcript.txt"
+        )
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Download Transcript",
+            default_name,
+            "Text Files (*.txt)",
+        )
+
+        if not file_path:
+
+            return
+
+        try:
+
+            with open(
+                file_path,
+                "w",
+                encoding="utf-8",
+            ) as file:
+
+                file.write(
+                    transcript
+                )
+
+        except OSError as error:
+
+            QMessageBox.critical(
+                self,
+                "Download Error",
+                str(error),
+            )
 
 # ================================================================
 # About Page
